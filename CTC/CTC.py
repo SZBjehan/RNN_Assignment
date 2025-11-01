@@ -62,7 +62,19 @@ class CTC(object):
         # add necessary code
         # Update extSymbols #TODO
         # Update  skip_connect #TODO
-        
+        extended_symbols.append(self.BLANK)
+        skip_connect.append(0)
+        for sym in target:
+            extended_symbols.append(sym)
+            skip_connect.append(0)
+            extended_symbols.append(self.BLANK)
+            skip_connect.append(0)
+
+        # enable skip connections where allowed: ext[j] is a non-blank
+        # and different from ext[j-2]
+        for j in range(2, len(extended_symbols)):
+            if extended_symbols[j] != self.BLANK and extended_symbols[j] != extended_symbols[j-2]:
+                skip_connect[j] = 1
         
         return extended_symbols, skip_connect
 
@@ -94,7 +106,25 @@ class CTC(object):
 
         # add necessary code
         # calculate alpha #TODO
-    
+        def p(t, s_idx):
+            cls = extended_symbols[s_idx]
+            return logits[t, cls]
+
+        # initialization
+        alpha[0, 0] = p(0, 0)
+        if S > 1:
+            alpha[0, 1] = p(0, 1)
+
+        # recursion
+        for t in range(1, T):
+            for s in range(S):
+                acc = alpha[t-1, s]
+                if s - 1 >= 0:
+                    acc += alpha[t-1, s-1]
+                if s - 2 >= 0 and skip_connect[s]:
+                    acc += alpha[t-1, s-2]
+                alpha[t, s] = p(t, s) * acc
+                
         return alpha
 
     def get_backward_probs(self, logits, extended_symbols, skip_connect):
@@ -123,7 +153,27 @@ class CTC(object):
 
         # add necessary code
         # calculate beta #TODO
+        S, T = len(extended_symbols), len(logits)
+        beta = np.zeros((T, S))
 
+        def p(t, s_idx):
+            cls = extended_symbols[s_idx]
+            return logits[t, cls]
+
+        # initialization (end states)
+        beta[T-1, S-1] = 1.0
+        if S > 1:
+            beta[T-1, S-2] = 1.0
+
+        # recursion backward
+        for t in range(T-2, -1, -1):
+            for s in range(S):
+                acc = p(t+1, s) * beta[t+1, s]
+                if s + 1 < S:
+                    acc += p(t+1, s+1) * beta[t+1, s+1]
+                if s + 2 < S and skip_connect[s+2]:
+                    acc += p(t+1, s+2) * beta[t+1, s+2]
+                beta[t, s] = acc
         
         return beta
 
@@ -146,7 +196,13 @@ class CTC(object):
         """
         # add necessary code
         # calculate gamma #TODO
-
+        T, S = alpha.shape
+        Z = alpha[-1, -1]
+        if S > 1:
+            Z += alpha[-1, -2]
+        if Z == 0.0:
+            Z = 1e-12
+        gamma = (alpha * beta) / Z
         
         return gamma
 
