@@ -140,7 +140,24 @@ class GRUCell(object):
         #self.z = TODO
         #self.n = TODO
         #h_t = TODO
+        
+        # Calculate reset gate
+        r_linear = self.Wrx @ x + self.brx + self.Wrh @ h_prev_t + self.brh
+        self.r = self.r_act.forward(r_linear) # <-- Fix 1
 
+        # Calculate update gate
+        z_linear = self.Wzx @ x + self.bzx + self.Wzh @ h_prev_t + self.bzh
+        self.z = self.z_act.forward(z_linear) # <-- Fix 1
+
+        # Calculate candidate hidden state
+        n_linear = self.Wnx @ x + self.bnx + self.r * (self.Wnh @ h_prev_t + self.bnh)
+        self.n = self.h_act.forward(n_linear) # <-- Fix 1
+
+        # Calculate new hidden state
+        h_t = (1 - self.z) * self.n + self.z * self.hidden # <-- Fix 2: Using self.hidden
+
+        # Store for backward pass
+        self.h_t = h_t
         return h_t
 
     def backward(self, delta):
@@ -191,5 +208,71 @@ class GRUCell(object):
         #self.dbnh = TODO
 
         #dx = TODO
+        
+        # dL/dn = dL/dh_t * (1 - z)
+        dn_t = delta * (1 - self.z)
+        
+        # dL/dz = dL/dh_t * (self.hidden - n)
+        dz_t = delta * (self.hidden - self.n) # <-- Fix 2
+        
+        # dL/dh_prev_t = dL/dh_t * z
+        # This will be accumulated
+        dh_prev_t = delta * self.z
+
+        # Backprop through candidate state n = tanh(n_linear)
+        dn_linear = self.h_act.backward(dn_t)
+
+        # Backprop through update gate z = sigmoid(z_linear)
+        dz_linear = self.z_act.backward(dz_t)
+        
+        # Backprop through n_linear = Wnx*x + bnx + r * (Wnh*self.hidden + bnh)
+        
+        # Gradients for n_linear parameters
+        self.dWnx = np.outer(dn_linear, self.x)
+        self.dbnx = dn_linear
+        
+        # Gradients for the reset-gated part
+        n_h_part_linear = (self.Wnh @ self.hidden + self.bnh) # <-- Fix 2
+        
+        # dL/dr = dL/dn_linear * (Wnh*self.hidden + bnh)
+        dr_t = dn_linear * n_h_part_linear # <-- Fix 2
+        
+        # dL/d(Wnh*self.hidden + bnh) = dL/dn_linear * r
+        d_n_h_part = dn_linear * self.r
+        
+        self.dWnh = np.outer(d_n_h_part, self.hidden) # <-- Fix 2
+        self.dbnh = d_n_h_part
+        
+        # Accumulate gradient for h_prev_t
+        dh_prev_t += d_n_h_part @ self.Wnh
+        
+        # Backprop through reset gate r = sigmoid(r_linear)
+        dr_linear = self.r_act.backward(dr_t)  # <--- ADD THIS LINE
+        
+        # Backprop through z_linear = Wzx*x + bzx + Wzh*self.hidden + bzh
+        self.dWzx = np.outer(dz_linear, self.x)
+        self.dbzx = dz_linear
+        self.dWzh = np.outer(dz_linear, self.hidden) # <-- Fix 2
+        self.dbzh = dz_linear
+        
+        # Accumulate gradients for h_prev_t and x
+        dh_prev_t += dz_linear @ self.Wzh
+        dx_z = dz_linear @ self.Wzx
+        
+        # Backprop through r_linear = Wrx*x + brx + Wrh*self.hidden + brh
+        self.dWrx = np.outer(dr_linear, self.x)
+        self.dbrx = dr_linear
+        self.dWrh = np.outer(dr_linear, self.hidden) # <-- Fix 2
+        self.dbrh = dr_linear
+
+        # Accumulate gradients for h_prev_t and x
+        dh_prev_t += dr_linear @ self.Wrh
+        dx_r = dr_linear @ self.Wrx
+
+        # Get gradient for x from n_linear
+        dx_n = dn_linear @ self.Wnx
+
+        # Total gradient w.r.t. x
+        dx = dx_n + dx_z + dx_r
 
         return dx, dh_prev_t

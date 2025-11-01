@@ -84,8 +84,38 @@ class RNNPhonemeClassifier(object):
         # hidden = TODO
         
         # TODO self. x = 
+        self.x = x.astype(float)
         # TODO update h_prev, rnn_cell, hidden[l], etc. for each time step t and each layer l
+        if h_0 is None:
+            h_prev = np.zeros((self.num_layers, batch_size, self.hidden_size), dtype=float)
+        else:
+            h_prev = h_0.astype(float)
+        
+        self.hiddens = []
+        self.hiddens.append([h_prev[l].copy() for l in range(self.num_layers)])
+        # self.hiddens.append([h_prev[l] for l in range(self.num_layers)])
+
+        for t in range(seq_len):
+            h_curr = []
+            for l in range(self.num_layers):
+                rnn_cell = self.rnn[l]
+                if l == 0:
+                    x_in = self.x[:, t, :]     # input to layer 0
+                else:
+                    x_in = h_curr[l - 1]       # input is previous layer's h_t at same time
+                h_t = rnn_cell(x_in, h_prev[l])
+                h_curr.append(h_t)
+
+            # prepare for next time step
+            for l in range(self.num_layers):
+                h_prev[l] = h_curr[l]
+
+            # keep states for BPTT
+            # self.hiddens.append(h_curr)
+            self.hiddens.append([h.copy() for h in h_curr])
+            
         # TODO logits = 
+        logits = self.output_layer(self.hiddens[-1][-1])  # last time step, top layer
         
         return logits
 

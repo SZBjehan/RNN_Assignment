@@ -49,9 +49,21 @@ class RNNCell(object):
         # ---------------------------end
 
         # Gradient definitions, TODO: add necessary code
+        self.dW_ih = np.zeros_like(self.W_ih)
+        self.dW_hh = np.zeros_like(self.W_hh)
+        self.db_ih = np.zeros_like(self.b_ih)
+        self.db_hh = np.zeros_like(self.b_hh)
         
     def init_weights(self, W_ih, W_hh, b_ih, b_hh):
-        #TODO add necessary code 
+        #TODO add necessary code
+        self.W_ih = W_ih.astype(float).copy()
+        self.W_hh = W_hh.astype(float).copy()
+        # PyTorch gives 1D biases
+        self.b_ih = b_ih.astype(float).copy().reshape(-1)
+        self.b_hh = b_hh.astype(float).copy().reshape(-1)
+
+        # Reset grads
+        self.zero_grad()
         
 
     # DO NOT change this method
@@ -90,8 +102,19 @@ class RNNCell(object):
         """
 
         # TODO, add necessary code to calculate h_t
-        # consider using matrix multiplication operator @
-        # h_t = # TODO
+        # Ensure batch dimension
+        if x.ndim == 1:
+            x_b = x.reshape(1, -1)
+        else:
+            x_b = x
+        if h_prev_t.ndim == 1:
+            h_prev = h_prev_t.reshape(1, -1)
+        else:
+            h_prev = h_prev_t
+        
+        z = x_b @ self.W_ih.T + h_prev @ self.W_hh.T
+        z = z + self.b_ih.reshape(1, -1) + self.b_hh.reshape(1, -1)
+        h_t = np.tanh(z)
 
         return h_t
 
@@ -99,7 +122,7 @@ class RNNCell(object):
         """
         RNN Cell backward (single time step).
 
-        Input 
+        Input
         -----
         delta: (batch_size, hidden_size)
                 Gradient w.r.t the current hidden layer
@@ -123,9 +146,21 @@ class RNNCell(object):
 
         """
         batch_size = delta.shape[0]
-     
         # Add necessary code to calculate dz 
         # dz = #TODO
+        dz = delta * (1.0 - np.square(h_t))
+
+        # Parameter grads (average across batch to match PyTorch mean reduction)
+        self.dW_ih += (dz.T @ h_prev_l) / batch_size
+        self.dW_hh += (dz.T @ h_prev_t) / batch_size
+        # Both biases receive the same dz
+        db = dz.sum(axis=0) / batch_size
+        self.db_ih += db
+        self.db_hh += db
+
+        # Input and h_prev grads
+        dx = dz @ self.W_ih
+        dh_prev_t = dz @ self.W_hh
         
         # Add necessary code to compute the averaged gradients (per batch) of the weights and biases
         # self.dW_ih = TODO

@@ -1,9 +1,9 @@
 import numpy as np
 import sys
 
-sys.path.append("mydnn")
-from gru_cell import *
-from linear import *
+# sys.path.append("mydnn")
+from mydnn.gru_cell import *
+from mydnn.linear import *
 
 
 class CharacterPredictor(object):
@@ -29,6 +29,14 @@ class CharacterPredictor(object):
         # self.num_classes = TODO # the number of classes being predicted from the Linear layer
         # self.hidden_dim = TODO
         # self.projection.W = TODO
+        self.gru = GRUCell(input_dim, hidden_dim)
+        self.projection = Linear(hidden_dim, num_classes)
+        self.num_classes = num_classes
+        self.hidden_dim = hidden_dim
+        # self.projection.W = np.eye(self.num_classes, self.hidden_dim)   # (num_classes, hidden_dim)
+
+        # self.projection.W = np.random.randn(num_classes, hidden_dim) * 0.01
+        # self.projection.b = np.random.randn(num_classes, 1) * 0.01
 
 
     def init_rnn_weights(
@@ -66,10 +74,16 @@ class CharacterPredictor(object):
 
         """
         hnext = self.gru(x, h)
-       
+
         # add necessary code
         # logits = TODO
-
+        hnext_2d = hnext.reshape(1, -1)
+    
+        # Pass through projection layer
+        logits_2d = self.projection(hnext_2d)
+        
+        # Flatten back to 1D: (num_classes,)
+        logits = logits_2d.flatten()
         
         return logits, hnext
 
@@ -99,5 +113,21 @@ def inference(net, inputs):
     # seq_len = TODO
     # logits = TODO
     # h = TODO
+    seq_len = inputs.shape[0]
+    logits = np.zeros((seq_len, net.num_classes))
+    
+    h = np.zeros(net.hidden_dim)
+    
+    for t in range(seq_len):
+        # Get the input for this time step
+        x_t = inputs[t]
+        
+        # Run one step of the network
+        # l_t will be (num_classes,)
+        # h will be (hidden_dim,) and gets passed to the next loop
+        l_t, h = net(x_t, h)   
+        
+        # Store the logits
+        logits[t] = l_t
 
     return logits
